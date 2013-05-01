@@ -106,11 +106,21 @@ do { \
 
 /* LPG Control for RAMP_CONTROL */
 #define QPNP_RAMP_START_MASK			0x01
+#define QPNP_RAMP_CONTROL_SHIFT			8
 
 #define QPNP_ENABLE_LUT_V0(value) (value |= QPNP_RAMP_START_MASK)
 #define QPNP_DISABLE_LUT_V0(value) (value &= ~QPNP_RAMP_START_MASK)
-#define QPNP_ENABLE_LUT_V1(value, id) (value |= BIT(id))
-#define QPNP_DISABLE_LUT_V1(value, id) (value &= ~BIT(id))
+#define QPNP_ENABLE_LUT_V1(value, id) \
+do { \
+	(id < 8) ? (value |= BIT(id)) : \
+	(value |= (BIT(id) >> QPNP_RAMP_CONTROL_SHIFT)); \
+} while (0)
+
+#define QPNP_DISABLE_LUT_V1(value, id) \
+do { \
+	(id < 8) ? (value &= ~BIT(id)) : \
+	(value &= (~BIT(id) >> QPNP_RAMP_CONTROL_SHIFT)); \
+} while (0)
 
 /* LPG Control for RAMP_STEP_DURATION_LSB */
 #define QPNP_RAMP_STEP_DURATION_LSB_MASK	0xFF
@@ -525,9 +535,16 @@ static int qpnp_lpg_change_table(struct pwm_device *pwm,
 		} else {
 			lut->duty_pct_list[i*2] = pwm_value;
 			lut->duty_pct_list[(i*2)+1] = (pwm_value >>
-			QPNP_PWM_VALUE_MSB_SHIFT) & QPNP_PWM_VALUE_MSB_MASK;
+			 QPNP_PWM_VALUE_MSB_SHIFT) & QPNP_PWM_VALUE_MSB_MASK;
 		}
 	}
+
+	/*
+	 * For the Keypad Backlight Lookup Table (KPDBL_LUT),
+	 * offset is lo_index.
+	 */
+	if (qpnp_check_gpled_lpg_channel(pwm->pwm_config.channel_id))
+		offset = lut->lo_index;
 
 	/* Write with max allowable burst mode, each entry is of two bytes */
 	for (i = 0; i < list_len; i += burst_size) {
@@ -1632,7 +1649,8 @@ static int qpnp_parse_dt_config(struct spmi_device *spmi,
 	rc = of_property_read_u32(of_node, "qcom,channel-id",
 				&pwm_dev->pwm_config.channel_id);
 	if (rc) {
-		dev_err(&spmi->dev, "%s: node is missing LPG channel id\n", __func__);
+		dev_err(&spmi->dev, "%s: node is missing LPG channel id\n",
+								__func__);
 		goto out;
 	}
 
@@ -1655,10 +1673,9 @@ static int qpnp_parse_dt_config(struct spmi_device *spmi,
 	}
 
 	lpg_config->lut_base_addr = res->start;
-
 	/* Each entry of LUT is of 2 bytes for generic LUT and of 1 byte
-	  * for KPDBL/GLED LUT.
-	  */
+	 * for KPDBL/GLED LUT.
+	 */
 	lpg_config->lut_size = resource_size(res) >> 1;
 	lut_entry_size = sizeof(u16);
 
@@ -1666,8 +1683,13 @@ static int qpnp_parse_dt_config(struct spmi_device *spmi,
 		lpg_config->lut_size = resource_size(res);
 		lut_entry_size = sizeof(u8);
 	}
+
+	if (qpnp_check_gpled_lpg_channel(pwm_dev->pwm_config.channel_id)) {
+		lpg_config->lut_size = resource_size(res);
+		lut_entry_size = sizeof(u8);
+	}
 	lut_config->duty_pct_list = kzalloc(lpg_config->lut_size *
-						lut_entry_size, GFP_KERNEL);
+					lut_entry_size, GFP_KERNEL);
 	if (!lut_config->duty_pct_list) {
 		pr_err("can not allocate duty pct list\n");
 		return -ENOMEM;
