@@ -428,11 +428,11 @@ static void afe_send_cal_block(int32_t path, u16 port_id)
 		(cal_block.cal_size > this_afe.afe_cal_addr[path].cal_size)) {
 		atomic_set(&this_afe.mem_map_cal_index, path);
 		if (this_afe.afe_cal_addr[path].cal_paddr != 0) {
-			hptr = &this_afe.mem_map_cal_handles[path];
-			result = afe_cmd_memory_unmap(atomic_xchg(hptr, 0));
+			result = afe_cmd_memory_unmap(
+				this_afe.afe_cal_addr[path].cal_paddr);
 			if (result) {
-				WARN(1, "%s: AFE memory unmap failed %d\n",
-				     __func__, result);
+				pr_err("%s: AFE memory unmap failed\n",
+						__func__);
 				atomic_set(&this_afe.mem_map_cal_index, -1);
 				goto done;
 			}
@@ -2025,11 +2025,8 @@ int afe_cmd_memory_map(u32 dma_addr_p, u32 dma_buf_sz)
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
-if (atomic_read(&this_afe.status) != 0) {
-       pr_err("%s: Memory map cmd failed\n", __func__);
-       ret = -EINVAL;
-       goto fail_cmd;
-   }
+
+	pr_debug("%s: mmap handle 0x%x\n", __func__, this_afe.mmap_handle);
 	kfree(mmap_region_cmd);
 	return 0;
 fail_cmd:
