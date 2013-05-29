@@ -59,7 +59,6 @@ struct afe_ctl {
 static atomic_t afe_ports_mad_type[SLIMBUS_PORT_LAST - SLIMBUS_0_RX];
 static unsigned long afe_configured_cmd;
 
-
 static struct afe_ctl this_afe;
 
 #define TIMEOUT_MS 1000

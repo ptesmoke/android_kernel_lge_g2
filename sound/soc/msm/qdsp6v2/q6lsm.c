@@ -31,6 +31,7 @@
 #include <mach/memory.h>
 #include <mach/debug_mm.h>
 #include "audio_acdb.h"
+#include "q6core.h"
 
 #define APR_TIMEOUT	(5 * HZ)
 #define LSM_CAL_SIZE	4096
@@ -485,7 +486,6 @@ int q6lsm_deregister_sound_model(struct lsm_client *client)
 
 	q6lsm_snd_model_buf_free(client);
 
-
 	return rc;
 }
 
@@ -575,8 +575,6 @@ static int q6lsm_memory_unmap_regions(struct lsm_client *client,
 	return rc;
 }
 
-
-
 static int q6lsm_send_cal(struct lsm_client *client)
 {
 	int rc;
@@ -632,31 +630,6 @@ static int q6lsm_send_cal(struct lsm_client *client)
 		       __func__, params.hdr.opcode, rc);
 bail:
 	return rc;
-}
-
-
-int q6lsm_unmap_cal_blocks(void)
-{
-	int				result = 0;
-
-	if (lsm_common.mmap_handle_for_cal == 0)
-		goto done;
-
-	q6lsm_mmap_apr_reg();
-	result = q6lsm_memory_unmap_regions(
-		&lsm_common.common_client,
-		lsm_common.mmap_handle_for_cal);
-	q6lsm_mmap_apr_dereg();
-	if (result < 0)
-		pr_err("%s: unmap failed, err %d\n",
-			__func__, result);
-
-	lsm_common.lsm_cal_addr = 0;
-	lsm_common.lsm_cal_size = 0;
-	lsm_common.mmap_handle_for_cal = 0;
-
-done:
-	return result;
 }
 
 int q6lsm_snd_model_buf_free(struct lsm_client *client)
@@ -792,6 +765,7 @@ int q6lsm_snd_model_buf_alloc(struct lsm_client *client, uint32_t len)
 		if (IS_ERR_OR_NULL(client->sound_model.handle)) {
 			pr_err("%s: ION memory allocation for AUDIO failed\n",
 			       __func__);
+			mutex_unlock(&client->cmd_lock);
 			goto fail;
 		}
 
