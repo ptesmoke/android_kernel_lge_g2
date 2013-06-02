@@ -334,6 +334,16 @@ static bool is_voice2_session(u32 session_id)
 	return (session_id == common.voice[VOC_PATH_VOICE2_PASSIVE].session_id);
 }
 
+static bool is_voc_state_active(int voc_state)
+{
+	if ((voc_state == VOC_RUN) ||
+		(voc_state == VOC_CHANGE) ||
+		(voc_state == VOC_STANDBY))
+		return true;
+
+	return false;
+}
+
 static bool is_other_session_active(u32 session_id)
 {
 	int i;
@@ -344,9 +354,7 @@ static bool is_other_session_active(u32 session_id)
 		if (common.voice[i].session_id == session_id)
 			continue;
 
-		if ((common.voice[i].voc_state == VOC_RUN) ||
-		    (common.voice[i].voc_state == VOC_CHANGE) ||
-		    (common.voice[i].voc_state == VOC_STANDBY)) {
+		if (is_voc_state_active(common.voice[i].voc_state)) {
 			ret = true;
 			break;
 		}
@@ -874,23 +882,6 @@ static int voice_destroy_mvm_cvs_session(struct voice_data *v)
 		}
 	}
 
-	/* Unmap physical memory for calibration */
-	pr_debug("%s: cal_mem_handle %d\n", __func__,
-		 common.cal_mem_handle);
-
-	if (!is_other_session_active(v->session_id) &&
-					(common.cal_mem_handle != 0)) {
-		ret = voice_send_mvm_unmap_memory_physical_cmd(v,
-						common.cal_mem_handle);
-		if (ret < 0) {
-			pr_err("%s Fail at cal mem unmap %d\n",
-				   __func__, ret);
-
-			goto fail;
-		}
-		common.cal_mem_handle = 0;
-	}
-
 	if (is_voip_session(v->session_id) || v->voc_state == VOC_ERROR) {
 		/* Destroy CVS. */
 		pr_debug("%s: CVS destroy session\n", __func__);
@@ -924,6 +915,23 @@ static int voice_destroy_mvm_cvs_session(struct voice_data *v)
 		}
 		cvs_handle = 0;
 		voice_set_cvs_handle(v, cvs_handle);
+
+		/* Unmap physical memory for calibration */
+		pr_debug("%s: cal_mem_handle %d\n", __func__,
+			 common.cal_mem_handle);
+
+		if (!is_other_session_active(v->session_id) &&
+					    (common.cal_mem_handle != 0)) {
+			ret = voice_send_mvm_unmap_memory_physical_cmd(v,
+							common.cal_mem_handle);
+			if (ret < 0) {
+				pr_err("%s Fail at cal mem unmap %d\n",
+				       __func__, ret);
+
+				goto fail;
+			}
+			common.cal_mem_handle = 0;
+		}
 
 		/* Destroy MVM. */
 		pr_debug("MVM destroy session\n");
@@ -1253,9 +1261,8 @@ void voc_disable_dtmf_det_on_active_sessions(void)
 	for (i = 0; i < MAX_VOC_SESSIONS; i++) {
 		v = &common.voice[i];
 		if ((v->dtmf_rx_detect_en) &&
-			((v->voc_state == VOC_RUN) ||
-			 (v->voc_state == VOC_CHANGE) ||
-			 (v->voc_state == VOC_STANDBY))) {
+			is_voc_state_active(v->voc_state)) {
+
 			pr_debug("disable dtmf det on ses_id=%d\n",
 				 v->session_id);
 			voice_send_dtmf_rx_detection_cmd(v, 0);
@@ -1276,9 +1283,7 @@ int voc_enable_dtmf_rx_detection(uint32_t session_id, uint32_t enable)
 	mutex_lock(&v->lock);
 	v->dtmf_rx_detect_en = enable;
 
-	if ((v->voc_state == VOC_RUN) ||
-	    (v->voc_state == VOC_CHANGE) ||
-	    (v->voc_state == VOC_STANDBY))
+	if (is_voc_state_active(v->voc_state))
 		ret = voice_send_dtmf_rx_detection_cmd(v,
 						       v->dtmf_rx_detect_en);
 
@@ -2424,14 +2429,60 @@ done:
 	return ret;
 }
 
-static bool is_voc_state_active(int voc_state)
+int voc_register_vocproc_vol_table(void)
 {
-	if ((voc_state == VOC_RUN) ||
-		(voc_state == VOC_CHANGE) ||
-		(voc_state == VOC_STANDBY))
-		return true;
+	int			result = 0;
+	int			i;
+	struct voice_data	*v = NULL;
+	pr_debug("%s\n", __func__);
 
-	return false;
+	mutex_lock(&common.common_lock);
+	for (i = 0; i < MAX_VOC_SESSIONS; i++) {
+		v = &common.voice[i];
+
+		mutex_lock(&v->lock);
+		if (is_voc_state_active(v->voc_state)) {
+			result = voice_send_cvp_register_vol_cal_cmd(v);
+			if (result) {
+				pr_err("%s: Failed to register vocvol table for session 0x%x!\n",
+					__func__, v->session_id);
+				mutex_unlock(&v->lock);
+				goto done;
+			}
+		}
+		mutex_unlock(&v->lock);
+	}
+done:
+	mutex_unlock(&common.common_lock);
+	return result;
+}
+
+int voc_deregister_vocproc_vol_table(void)
+{
+	int			result = 0;
+	int			i;
+	struct voice_data	*v = NULL;
+	pr_debug("%s\n", __func__);
+
+	mutex_lock(&common.common_lock);
+	for (i = 0; i < MAX_VOC_SESSIONS; i++) {
+		v = &common.voice[i];
+
+		mutex_lock(&v->lock);
+		if (is_voc_state_active(v->voc_state)) {
+			result = voice_send_cvp_deregister_vol_cal_cmd(v);
+			if (result) {
+				pr_err("%s: Failed to deregister vocvol table for session 0x%x!\n",
+					__func__, v->session_id);
+				mutex_unlock(&v->lock);
+				goto done;
+			}
+		}
+		mutex_unlock(&v->lock);
+	}
+done:
+	mutex_unlock(&common.common_lock);
+	return result;
 }
 
 int voice_unmap_cal_blocks(void)
@@ -3185,7 +3236,6 @@ static int voice_destroy_vocproc(struct voice_data *v)
 	voice_send_cvp_deregister_vol_cal_cmd(v);
 	voice_send_cvp_deregister_cal_cmd(v);
 	voice_send_cvp_deregister_dev_cfg_cmd(v);
-
 	voice_send_cvs_deregister_cal_cmd(v);
 
 	/* destrop cvp session */
