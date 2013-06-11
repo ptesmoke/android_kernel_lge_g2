@@ -204,6 +204,7 @@ struct dwc3_msm {
 	struct regulator	*hsusb_vddcx;
 	struct regulator	*ssusb_1p8;
 	struct regulator	*ssusb_vddcx;
+	struct regulator	*dwc3_gdsc;
 
 	/* VBUS regulator if no OTG and running in host only mode */
 	struct regulator	*vbus_otg;
@@ -1344,6 +1345,37 @@ put_3p3_lpm:
 }
 #endif
 
+/*
+ * Config Global Distributed Switch Controller (GDSC)
+ * to support controller power collapse
+ */
+static int dwc3_msm_config_gdsc(struct dwc3_msm *msm, int on)
+{
+	int ret = 0;
+
+	if (IS_ERR(msm->dwc3_gdsc))
+		return 0;
+
+	if (!msm->dwc3_gdsc) {
+		msm->dwc3_gdsc = devm_regulator_get(msm->dev,
+			"USB3_GDSC");
+		if (IS_ERR(msm->dwc3_gdsc))
+			return 0;
+	}
+
+	if (on) {
+		ret = regulator_enable(msm->dwc3_gdsc);
+		if (ret) {
+			dev_err(msm->dev, "unable to enable usb3 gdsc\n");
+			return ret;
+		}
+	} else {
+		regulator_disable(msm->dwc3_gdsc);
+	}
+
+	return 0;
+}
+
 static int dwc3_msm_link_clk_reset(bool assert)
 {
 	int ret = 0;
@@ -1986,6 +2018,11 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 
 	/* make sure above writes are completed before turning off clocks */
 	wmb();
+
+	/* remove vote for controller power collapse */
+	if (!host_bus_suspend)
+		dwc3_msm_config_gdsc(mdwc, 0);
+
 	if (!host_bus_suspend || !host_ss_active) {
 		clk_disable_unprepare(mdwc->core_clk);
 		mdwc->lpm_flags |= MDWC3_CORECLK_OFF;
@@ -2081,6 +2118,9 @@ static int dwc3_msm_resume(struct dwc3_msm *mdwc)
 #ifdef CONFIG_USB_LGE_USB3_REDRIVER
     dwc3_redriver_ldo_enable(1);
 #endif
+	/* add vote for controller power collapse */
+	if (!host_bus_suspend)
+		dwc3_msm_config_gdsc(mdwc, 1);
 
 	if (!host_bus_suspend)
 		clk_prepare_enable(mdwc->utmi_clk);
@@ -2726,11 +2766,18 @@ static int __devinit dwc3_msm_probe(struct platform_device *pdev)
 	*/
 	mutex_init(&msm->dwc3_clk_mutex);
 
+	ret = dwc3_msm_config_gdsc(msm, 1);
+	if (ret) {
+		dev_err(&pdev->dev, "unable to configure usb3 gdsc\n");
+		return ret;
+	}
+
 	msm->xo_clk = clk_get(&pdev->dev, "xo");
 	if (IS_ERR(msm->xo_clk)) {
 		dev_err(&pdev->dev, "%s unable to get TCXO buffer handle\n",
 								__func__);
-		return PTR_ERR(msm->xo_clk);
+		ret = PTR_ERR(msm->xo_clk);
+		goto disable_dwc3_gdsc;
 	}
 
 	ret = clk_prepare_enable(msm->xo_clk);
@@ -3161,6 +3208,8 @@ disable_xo:
 	clk_disable_unprepare(msm->xo_clk);
 put_xo:
 	clk_put(msm->xo_clk);
+disable_dwc3_gdsc:
+	dwc3_msm_config_gdsc(msm, 0);
 
 	return ret;
 }
@@ -3204,6 +3253,8 @@ static int __devexit dwc3_msm_remove(struct platform_device *pdev)
 	clk_disable_unprepare(msm->ref_clk);
 	clk_disable_unprepare(msm->xo_clk);
 	clk_put(msm->xo_clk);
+
+	dwc3_msm_config_gdsc(msm, 0);
 
 	return 0;
 }
