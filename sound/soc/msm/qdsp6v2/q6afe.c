@@ -185,7 +185,7 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			pr_debug("%s: mmap_handle: 0x%x, cal index %d\n",
 				 __func__, payload[0],
 				 atomic_read(&this_afe.mem_map_cal_index));
-	        if (atomic_read(&this_afe.mem_map_cal_index) != -1) {
+			if (atomic_read(&this_afe.mem_map_cal_index) != -1)
 				atomic_set(&this_afe.mem_map_cal_handles[
 					atomic_read(&this_afe.mem_map_cal_index)],
 					(uint32_t)payload[0]);
@@ -413,9 +413,10 @@ static void afe_send_cal_block(int32_t path, u16 port_id)
 	struct acdb_cal_block				cal_block;
 	struct afe_audioif_config_command_no_payload	afe_cal;
 	atomic_t *hptr;
+	u32 handle;
 
 	pr_debug("%s: path %d\n", __func__, path);
-	if (path == AFE_AANC_TX_CAL) {
+	if (path == AANC_TX_CAL) {
 		get_aanc_cal(&cal_block);
 	} else {
 		get_afe_cal(path, &cal_block);
@@ -430,11 +431,17 @@ static void afe_send_cal_block(int32_t path, u16 port_id)
 		(cal_block.cal_size > this_afe.afe_cal_addr[path].cal_size)) {
 		atomic_set(&this_afe.mem_map_cal_index, path);
 		if (this_afe.afe_cal_addr[path].cal_paddr != 0) {
-			result = afe_cmd_memory_unmap(
-				this_afe.afe_cal_addr[path].cal_paddr);
+			hptr = &this_afe.mem_map_cal_handles[path];
+			handle = atomic_xchg(hptr, 0);
+			if (!handle) {
+				pr_err("%s: invalid NULL handle\n", __func__);
+				result = -EINVAL;
+				goto done;
+			}
+			result = afe_cmd_memory_unmap(handle);
 			if (result) {
-				pr_err("%s: AFE memory unmap failed\n",
-						__func__);
+				WARN(1, "%s: AFE memory unmap failed %d, handle 0x%x\n",
+				     __func__, result, handle);
 				atomic_set(&this_afe.mem_map_cal_index, -1);
 				goto done;
 			}
