@@ -32,6 +32,7 @@ enum {
 	MAX_AFE_CAL_TYPES
 };
 
+
 struct afe_ctl {
 	void *apr;
 	atomic_t state;
@@ -416,7 +417,7 @@ static void afe_send_cal_block(int32_t path, u16 port_id)
 	u32 handle;
 
 	pr_debug("%s: path %d\n", __func__, path);
-	if (path == AANC_TX_CAL) {
+	if (path == AFE_AANC_TX_CAL) {
 		get_aanc_cal(&cal_block);
 	} else {
 		get_afe_cal(path, &cal_block);
