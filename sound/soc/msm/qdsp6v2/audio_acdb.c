@@ -27,6 +27,7 @@
 #include <sound/q6asm-v2.h>
 #include <sound/q6lsm.h>
 
+
 #define MAX_NETWORKS			15
 #define MAX_IOCTL_DATA			(MAX_NETWORKS * 2)
 #define MAX_COL_SIZE			324
@@ -1046,7 +1047,7 @@ static int unmap_cal_tables(void)
 static int deregister_memory(void)
 {
 	int	result = 0;
-	int i;
+	int	i;
 	pr_debug("%s\n", __func__);
 
 	if (atomic64_read(&acdb_data.mem_len)) {
@@ -1056,7 +1057,6 @@ static int deregister_memory(void)
 		if (result < 0)
 			pr_err("%s: unmap_cal_tables failed, err = %d\n",
 				__func__, result);
-
 
 
 		atomic64_set(&acdb_data.mem_len, 0);

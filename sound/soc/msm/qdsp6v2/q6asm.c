@@ -101,6 +101,7 @@ static struct audio_client common_client;
 static int set_custom_topology;
 static int topology_map_handle;
 
+
 int q6asm_mmap_apr_dereg(void)
 {
 	int c;
@@ -441,16 +442,15 @@ done:
 int q6asm_unmap_cal_blocks(void)
 {
 	int				result = 0;
-	struct acdb_cal_block		cal_block;
 
 	if (topology_map_handle == 0)
 		goto done;
 
-	get_asm_custom_topology(&cal_block);
-
-	if (q6asm_mmap_apr_reg() == NULL)
+	if (q6asm_mmap_apr_reg() == NULL) {
 		pr_err("%s: q6asm_mmap_apr_reg failed, err %d\n",
 			__func__, result);
+		goto done;
+	}
 
 	result = q6asm_memory_unmap_regions(&common_client, IN);
 	if (result < 0)
@@ -463,11 +463,11 @@ int q6asm_unmap_cal_blocks(void)
 			__func__, result);
 
 	topology_map_handle = 0;
+	set_custom_topology = 0;
 
 done:
 	return result;
 }
-
 
 int q6asm_audio_client_buf_free(unsigned int dir,
 			struct audio_client *ac)
@@ -695,7 +695,6 @@ struct audio_client *q6asm_get_audio_client(int session_id)
 	if (session_id == ASM_CONTROL_SESSION) {
 		return &common_client;
 	}
-
 
 	if ((session_id <= 0) || (session_id > SESSION_MAX)) {
 		pr_err("%s: invalid session: %d\n", __func__, session_id);
@@ -3856,6 +3855,8 @@ static int __init q6asm_init(void)
 	set_custom_topology = 1;
 	common_client.port[0].buf = &common_buf;
 
+
+	common_client.port[0].buf = &common_buf;
 
 	config_debug_fs_init();
 

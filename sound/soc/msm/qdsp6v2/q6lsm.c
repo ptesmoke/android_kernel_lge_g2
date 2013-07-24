@@ -632,6 +632,30 @@ bail:
 	return rc;
 }
 
+int q6lsm_unmap_cal_blocks(void)
+{
+	int				result = 0;
+
+	if (lsm_common.mmap_handle_for_cal == 0)
+		goto done;
+
+	q6lsm_mmap_apr_reg();
+	result = q6lsm_memory_unmap_regions(
+		&lsm_common.common_client,
+		lsm_common.mmap_handle_for_cal);
+	q6lsm_mmap_apr_dereg();
+	if (result < 0)
+		pr_err("%s: unmap failed, err %d\n",
+			__func__, result);
+
+	lsm_common.lsm_cal_addr = 0;
+	lsm_common.lsm_cal_size = 0;
+	lsm_common.mmap_handle_for_cal = 0;
+
+done:
+	return result;
+}
+
 int q6lsm_snd_model_buf_free(struct lsm_client *client)
 {
 	int rc;
@@ -674,7 +698,6 @@ static struct lsm_client *q6lsm_get_lsm_client(int session_id)
 	else
 		client = lsm_session[session_id];
 	spin_unlock_irqrestore(&lsm_session_lock, flags);
-
 done:
 	return client;
 }
