@@ -13,6 +13,7 @@
 #define __QDSP6VOICE_H__
 
 #include <mach/qdsp6v2/apr.h>
+#include <mach/qdsp6v2/rtac.h>
 #include <linux/msm_ion.h>
 #include <sound/voice_params.h>
 
@@ -1328,6 +1329,10 @@ struct common_data {
 
 	struct mem_map_table cal_mem_map_table;
 	uint32_t cal_mem_handle;
+
+	struct mem_map_table rtac_mem_map_table;
+	uint32_t rtac_mem_handle;
+
 	struct cal_mem cvp_cal;
 	struct cal_mem cvs_cal;
 
@@ -1429,6 +1434,9 @@ int voice_unmap_cal_blocks(void);
 int voc_alloc_cal_shared_memory(void);
 int voc_alloc_voip_shared_memory(void);
 int is_voc_initialized(void);
+
+int voc_map_rtac_block(struct rtac_cal_block_data *cal_block);
+int voc_unmap_rtac_block(uint32_t *mem_map_handle);
 
 uint32_t voc_get_session_id(char *name);
 
