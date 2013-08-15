@@ -364,7 +364,9 @@ static int msm8974_liquid_ext_spk_power_amp_init(void)
 static void msm8974_liquid_ext_ult_spk_power_amp_enable(u32 on)
 {
 	if (on) {
-		regulator_enable(ext_spk_amp_regulator);
+                if (regulator_enable(ext_spk_amp_regulator))
+                        pr_err("%s: enable failed ext_spk_amp_reg\n",
+                                __func__);
 		gpio_direction_output(ext_ult_spk_amp_gpio, 1);
 		/* time takes enable the external power class AB amplifier */
 		usleep_range(EXT_CLASS_AB_EN_DELAY,
@@ -384,7 +386,9 @@ static void msm8974_liquid_ext_ult_spk_power_amp_enable(u32 on)
 static void msm8974_liquid_ext_spk_power_amp_enable(u32 on)
 {
 	if (on) {
-		regulator_enable(ext_spk_amp_regulator);
+                if (regulator_enable(ext_spk_amp_regulator))
+                        pr_err("%s: enable failed ext_spk_amp_reg\n",
+                                __func__);
 		gpio_direction_output(ext_spk_amp_gpio, on);
 		/*time takes enable the external power amplifier*/
 		usleep_range(EXT_CLASS_D_EN_DELAY,
@@ -2941,14 +2945,6 @@ static __devinit int msm8974_asoc_machine_probe(struct platform_device *pdev)
 		goto skip_prim;
 #endif
 
-	/* Parse Primary AUXPCM info from DT */
-	ret = msm8974_dtparse_auxpcm(pdev, &pdata->pri_auxpcm_ctrl,
-					msm_prim_auxpcm_gpio_name);
-	if (ret) {
-		dev_err(&pdev->dev,
-		"%s: Primary Auxpcm pin data parse failed\n", __func__);
-		goto err;
-	}
 #ifdef CONFIG_MACH_LGE
 skip_prim:
 
@@ -2965,15 +2961,6 @@ skip_prim:
 	if (sec_auxpcm_use_gpio == 0)
 		goto skip_sec;
 #endif
-
-	/* Parse Secondary AUXPCM info from DT */
-	ret = msm8974_dtparse_auxpcm(pdev, &pdata->sec_auxpcm_ctrl,
-					msm_sec_auxpcm_gpio_name);
-	if (ret) {
-		dev_err(&pdev->dev,
-		"%s: Secondary Auxpcm pin data parse failed\n", __func__);
-		goto err;
-	}
 
 #ifdef CONFIG_MACH_LGE
 skip_sec:
@@ -3019,26 +3006,9 @@ skip_sec:
 		goto err;
 	}
 
-	ext_ult_lo_amp_gpio = of_get_named_gpio(pdev->dev.of_node,
-						prop_name_ult_lo_gpio, 0);
-	if (!gpio_is_valid(ext_ult_lo_amp_gpio)) {
-		dev_dbg(&pdev->dev,
-			"Couldn't find %s property in node %s, %d\n",
-			prop_name_ult_lo_gpio, pdev->dev.of_node->full_name,
-			ext_ult_lo_amp_gpio);
-	} else {
-		ret = gpio_request(ext_ult_lo_amp_gpio, "US_AMP_GPIO");
-		if (ret) {
-			dev_err(card->dev,
-				"%s: Failed to request US amp gpio %d\n",
-				__func__, ext_ult_lo_amp_gpio);
-			goto err;
-		}
-	}
-
 	ret = msm8974_prepare_codec_mclk(card);
 	if (ret)
-		goto err1;
+		goto err;
 
 	if (of_property_read_bool(pdev->dev.of_node, "qcom,hdmi-audio-rx")) {
 		dev_info(&pdev->dev, "%s(): hdmi audio support present\n",
@@ -3060,27 +3030,75 @@ skip_sec:
 	}
 
 #ifndef CONFIG_MACH_LGE
-	pdata->us_euro_gpio = of_get_named_gpio(pdev->dev.of_node,
-				"qcom,us-euro-gpios", 0);
-	if (pdata->us_euro_gpio < 0) {
-		dev_info(&pdev->dev, "property %s not detected in node %s",
-			"qcom,us-euro-gpios",
-			pdev->dev.of_node->full_name);
-	} else {
-		dev_dbg(&pdev->dev, "%s detected %d",
-			"qcom,us-euro-gpios", pdata->us_euro_gpio);
-		mbhc_cfg.swap_gnd_mic = msm8974_swap_gnd_mic;
-	}
+        pdata->us_euro_gpio = of_get_named_gpio(pdev->dev.of_node,
+                                "qcom,us-euro-gpios", 0);
+        if (pdata->us_euro_gpio < 0) {
+                dev_info(&pdev->dev, "property %s not detected in node %s",
+                        "qcom,us-euro-gpios",
+                        pdev->dev.of_node->full_name);
+        } else {
+                dev_dbg(&pdev->dev, "%s detected %d",
+                        "qcom,us-euro-gpios", pdata->us_euro_gpio);
+                mbhc_cfg.swap_gnd_mic = msm8974_swap_gnd_mic;
+        }
 
-	ret = msm8974_prepare_us_euro(card);
-	if (ret)
-		dev_err(&pdev->dev, "msm8974_prepare_us_euro failed (%d)\n",
-			ret);
+        ret = msm8974_prepare_us_euro(card);
+        if (ret)
+                dev_err(&pdev->dev, "msm8974_prepare_us_euro failed (%d)\n",
+                        ret);
 #endif
 
-	mutex_init(&cdc_mclk_mutex);
-	atomic_set(&prim_auxpcm_rsc_ref, 0);
-	atomic_set(&sec_auxpcm_rsc_ref, 0);
+        mutex_init(&cdc_mclk_mutex);
+        atomic_set(&prim_auxpcm_rsc_ref, 0);
+        atomic_set(&sec_auxpcm_rsc_ref, 0);
+        spdev = pdev;
+        ext_spk_amp_regulator = NULL;
+        msm8974_liquid_dock_dev = NULL;
+
+        ret = snd_soc_register_card(card);
+        if (ret == -EPROBE_DEFER)
+                goto err;
+        else if (ret) {
+                dev_err(&pdev->dev, "snd_soc_register_card failed (%d)\n",
+                        ret);
+                goto err;
+        }
+
+        /* Parse Primary AUXPCM info from DT */
+        ret = msm8974_dtparse_auxpcm(pdev, &pdata->pri_auxpcm_ctrl,
+                                        msm_prim_auxpcm_gpio_name);
+        if (ret) {
+                dev_err(&pdev->dev,
+                "%s: Primary Auxpcm pin data parse failed\n", __func__);
+                goto err;
+        }
+
+        /* Parse Secondary AUXPCM info from DT */
+        ret = msm8974_dtparse_auxpcm(pdev, &pdata->sec_auxpcm_ctrl,
+                                        msm_sec_auxpcm_gpio_name);
+        if (ret) {
+                dev_err(&pdev->dev,
+                "%s: Secondary Auxpcm pin data parse failed\n", __func__);
+                goto err;
+        }
+
+
+        ext_ult_lo_amp_gpio = of_get_named_gpio(pdev->dev.of_node,
+                                                prop_name_ult_lo_gpio, 0);
+        if (!gpio_is_valid(ext_ult_lo_amp_gpio)) {
+                dev_dbg(&pdev->dev,
+                        "Couldn't find %s property in node %s, %d\n",
+                        prop_name_ult_lo_gpio, pdev->dev.of_node->full_name,
+                        ext_ult_lo_amp_gpio);
+        } else {
+                ret = gpio_request(ext_ult_lo_amp_gpio, "US_AMP_GPIO");
+                if (ret) {
+                        dev_err(card->dev,
+                                "%s: Failed to request US amp gpio %d\n",
+                                __func__, ext_ult_lo_amp_gpio);
+                        goto err;
+                }
+        }
 
 #ifdef CONFIG_SND_FM_RADIO
 	atomic_set(&tert_mi2s_rsc_ref, 0);
@@ -3091,17 +3109,6 @@ skip_sec:
 		goto err;
 	}
 #endif
-
-	spdev = pdev;
-	ext_spk_amp_regulator = NULL;
-	msm8974_liquid_dock_dev = NULL;
-
-	ret = snd_soc_register_card(card);
-	if (ret) {
-		dev_err(&pdev->dev, "snd_soc_register_card failed (%d)\n",
-			ret);
-		goto err1;
-	}
 
 #ifdef CONFIG_MACH_LGE
 	ret = of_property_read_u32(pdev->dev.of_node, "lge,debounce-time-us",
@@ -3160,8 +3167,9 @@ skip_sec:
 	return 0;
 
 err1:
-	gpio_free(ext_ult_lo_amp_gpio);
-	ext_ult_lo_amp_gpio = -1;
+        if (ext_ult_lo_amp_gpio >= 0)
+                gpio_free(ext_ult_lo_amp_gpio);
+        ext_ult_lo_amp_gpio = -1;
 err:
 	if (pdata->mclk_gpio > 0) {
 		dev_dbg(&pdev->dev, "%s free gpio %d\n",
@@ -3175,6 +3183,7 @@ err:
 		gpio_free(pdata->us_euro_gpio);
 		pdata->us_euro_gpio = 0;
 	}
+        mutex_destroy(&cdc_mclk_mutex);
 	devm_kfree(&pdev->dev, pdata);
 	return ret;
 }
