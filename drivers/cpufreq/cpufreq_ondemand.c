@@ -646,6 +646,7 @@ static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
 					dbs_timer_init(dbs_info);
 					/* Enable frequency synchronization
 					 * of CPUs */
+					mutex_unlock(&dbs_info->timer_mutex);
 					atomic_set(&dbs_info->sync_enabled, 1);
 				}
 skip_this_cpu:
