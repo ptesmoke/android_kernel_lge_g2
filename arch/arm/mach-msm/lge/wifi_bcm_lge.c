@@ -29,7 +29,7 @@ static unsigned wlan_wakes_msm[] = {
 static unsigned wifi_config_power_on[] = {
 	    GPIO_CFG(WLAN_POWER, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA) };
 
-#if defined(CONFIG_BCM4335BT) 
+#if defined(CONFIG_BCM4335BT)
 extern int bcm_bt_lock(int cookie);
 extern void bcm_bt_unlock(int cookie);
 static int lock_cookie_wifi = 'W' | 'i'<<8 | 'F'<<16 | 'i'<<24; /* cookie is "WiFi" */
@@ -702,7 +702,7 @@ const struct cntry_locales_custom bcm_wifi_translate_custom_table[] = {
 	{"GB", "GB", 6},
 	{"UY", "UY", 1},
 	{"VI", "VI", 13},
-	{"VA", "VA", 12},   /* changed 2 -> 12*/
+	{"VA", "VA", 2},   /* changed 2 -> 12*/
 	{"VE", "VE", 3},
 	{"VN", "VN", 4},
 	{"MA", "MA", 1},
