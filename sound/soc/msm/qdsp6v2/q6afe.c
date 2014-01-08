@@ -225,29 +225,6 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 	return 0;
 }
 
-int afe_unmap_cal_blocks(void)
-{
-	int				i;
-	int				result = 0;
-
-	for (i = 0; i < MAX_AFE_CAL_TYPES; i++) {
-		if (atomic_read(&this_afe.mem_map_cal_handles[i]) != 0) {
-
-			atomic_set(&this_afe.mem_map_cal_index, i);
-			result = afe_cmd_memory_unmap(atomic_read(
-				&this_afe.mem_map_cal_handles[i]));
-			if (result < 0)
-				pr_err("%s: unmap failed, err %d\n",
-					__func__, result);
-			atomic_set(&this_afe.mem_map_cal_index, -1);
-
-			this_afe.afe_cal_addr[i].cal_paddr = 0;
-			this_afe.afe_cal_addr[i].cal_size = 0;
-			atomic_set(&this_afe.mem_map_cal_handles[i], 0);
-		}
-	}
-	return result;
-}
 
 int afe_get_port_type(u16 port_id)
 {
