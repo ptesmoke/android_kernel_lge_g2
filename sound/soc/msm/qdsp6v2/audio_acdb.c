@@ -27,6 +27,7 @@
 #include <sound/q6asm-v2.h>
 #include <sound/q6lsm.h>
 
+
 #define MAX_NETWORKS			15
 #define MAX_IOCTL_DATA			(MAX_NETWORKS * 2)
 #define MAX_COL_SIZE			324
@@ -954,6 +955,36 @@ static int get_spk_protection_status(struct msm_spk_prot_status *status)
 	return result;
 }
 
+static int register_vocvol_table(void)
+{
+	int result = 0;
+	pr_debug("%s\n", __func__);
+
+	result = voc_register_vocproc_vol_table();
+	if (result < 0) {
+		pr_err("%s: Register vocproc vol failed!\n", __func__);
+		goto done;
+	}
+
+done:
+	return result;
+}
+
+static int deregister_vocvol_table(void)
+{
+	int result = 0;
+	pr_debug("%s\n", __func__);
+
+	result = voc_deregister_vocproc_vol_table();
+	if (result < 0) {
+		pr_err("%s: Deregister vocproc vol failed!\n", __func__);
+		goto done;
+	}
+
+done:
+	return result;
+}
+
 static int acdb_open(struct inode *inode, struct file *f)
 {
 	s32 result = 0;
@@ -1016,7 +1047,7 @@ static int unmap_cal_tables(void)
 static int deregister_memory(void)
 {
 	int	result = 0;
-	int i;
+	int	i;
 	pr_debug("%s\n", __func__);
 
 	if (atomic64_read(&acdb_data.mem_len)) {
@@ -1026,7 +1057,6 @@ static int deregister_memory(void)
 		if (result < 0)
 			pr_err("%s: unmap_cal_tables failed, err = %d\n",
 				__func__, result);
-
 
 
 		atomic64_set(&acdb_data.mem_len, 0);
@@ -1041,7 +1071,7 @@ static int deregister_memory(void)
 	return result;
 }
 
-int register_memory(void)
+static int register_memory(void)
 {
 	int			result;
 	int			i;
@@ -1198,9 +1228,15 @@ static long acdb_ioctl(struct file *f,
 		}
 		if (copy_to_user((void *)arg, &prot_status,
 			sizeof(prot_status))) {
-			pr_err("%s Failed to update prot_status\n", __func__);
+			pr_err("%s: Failed to update prot_status\n", __func__);
 		}
 		mutex_unlock(&acdb_data.acdb_mutex);
+		goto done;
+	case AUDIO_REGISTER_VOCPROC_VOL_TABLE:
+		result = register_vocvol_table();
+		goto done;
+	case AUDIO_DEREGISTER_VOCPROC_VOL_TABLE:
+		result = deregister_vocvol_table();
 		goto done;
 	}
 
