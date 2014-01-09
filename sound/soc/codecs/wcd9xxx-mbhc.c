@@ -94,9 +94,6 @@
 
 #define WCD9XXX_USLEEP_RANGE_MARGIN_US 1000
 
-#define WCD9XXX_IRQ_MBHC_JACK_SWITCH_TAIKO 28
-#define WCD9XXX_IRQ_MBHC_JACK_SWITCH_TAPAN 21
-
 static bool detect_use_vddio_switch = true;
 
 struct wcd9xxx_mbhc_detect {
@@ -773,18 +770,12 @@ static void wcd9xxx_insert_detect_setup(struct wcd9xxx_mbhc *mbhc, bool ins)
 		 ins ? "insert" : "removal");
 	/* Disable detection to avoid glitch */
 	snd_soc_update_bits(mbhc->codec, WCD9XXX_A_MBHC_INSERT_DETECT, 1, 0);
-
-#ifdef CONFIG_MACH_LGE
-	snd_soc_write(mbhc->codec, WCD9XXX_A_MBHC_INSERT_DETECT,
-		      (0x6c | (ins ? (1 << 1) : 0)));
-#else /* QCT original */
 	if (mbhc->mbhc_cfg->gpio_level_insert)
 		snd_soc_write(mbhc->codec, WCD9XXX_A_MBHC_INSERT_DETECT,
 			      (0x68 | (ins ? (1 << 1) : 0)));
 	else
 		snd_soc_write(mbhc->codec, WCD9XXX_A_MBHC_INSERT_DETECT,
 			      (0x6C | (ins ? (1 << 1) : 0)));
-#endif
 	/* Re-enable detection */
 	snd_soc_update_bits(mbhc->codec, WCD9XXX_A_MBHC_INSERT_DETECT, 1, 1);
 }
@@ -1852,12 +1843,12 @@ static void wcd9xxx_hs_remove_irq_swch(struct wcd9xxx_mbhc *mbhc)
 /* called only from interrupt which is under codec_resource_lock acquisition */
 static void wcd9xxx_hs_remove_irq_noswch(struct wcd9xxx_mbhc *mbhc)
 {
-	short bias_value;
+	s16 dce;
+	unsigned long timeout;
 	bool removed = true;
 	struct snd_soc_codec *codec = mbhc->codec;
 	const struct wcd9xxx_mbhc_general_cfg *generic =
 		WCD9XXX_MBHC_CAL_GENERAL_PTR(mbhc->mbhc_cfg->calibration);
-	int min_us = FAKE_REMOVAL_MIN_PERIOD_MS * 1000;
 
 	pr_debug("%s: enter\n", __func__);
 	if (mbhc->current_plug != PLUG_TYPE_HEADSET) {
@@ -1869,23 +1860,21 @@ static void wcd9xxx_hs_remove_irq_noswch(struct wcd9xxx_mbhc *mbhc)
 	}
 
 	usleep_range(generic->t_shutdown_plug_rem,
-			generic->t_shutdown_plug_rem);
+		     generic->t_shutdown_plug_rem);
 
+	timeout = jiffies + msecs_to_jiffies(FAKE_REMOVAL_MIN_PERIOD_MS);
 	do {
-		bias_value = wcd9xxx_codec_sta_dce(mbhc, 1,  true);
-		pr_debug("%s: DCE %d,%d, %d us left\n", __func__, bias_value,
-			 wcd9xxx_codec_sta_dce_v(mbhc, 1, bias_value), min_us);
-		if (bias_value <
+		dce = wcd9xxx_codec_sta_dce(mbhc, 1,  true);
+		pr_debug("%s: DCE 0x%x,%d\n", __func__, dce,
+			 wcd9xxx_codec_sta_dce_v(mbhc, 1, dce));
+		if (dce <
 		    wcd9xxx_get_current_v(mbhc, WCD9XXX_CURRENT_V_INS_H)) {
-			pr_debug("%s: checking false removal\n", __func__);
-			msleep(500);
-			removed = !wcd9xxx_hs_remove_settle(mbhc);
-			pr_debug("%s: headset %sactually removed\n", __func__,
-				 removed ? "" : "not ");
+			removed = false;
 			break;
 		}
-		min_us -= mbhc->mbhc_data.t_dce;
-	} while (min_us > 0);
+	} while (!time_after(jiffies, timeout));
+	pr_debug("%s: headset %sactually removed\n", __func__,
+		  removed ? "" : "not ");
 
 	if (removed) {
 		if (mbhc->mbhc_cfg->detect_extn_cable) {
@@ -2349,11 +2338,7 @@ static void wcd9xxx_swch_irq_handler(struct wcd9xxx_mbhc *mbhc)
 
 	mbhc->in_swch_irq_handler = true;
 	/* Wait here for debounce time */
-#ifdef CONFIG_MACH_LGE
-	usleep(mbhc->mbhc_cfg->debounce_time_us);
-#else
 	usleep_range(SWCH_IRQ_DEBOUNCE_TIME_US, SWCH_IRQ_DEBOUNCE_TIME_US);
-#endif
 
 	WCD9XXX_BCL_LOCK(mbhc->resmgr);
 
@@ -2440,14 +2425,8 @@ static irqreturn_t wcd9xxx_mech_plug_detect_irq(int irq, void *data)
 		r = IRQ_NONE;
 	} else {
 		/* Call handler */
-#ifdef CONFIG_MACH_LGE
-		disable_irq(mbhc->mbhc_cfg->gpio_irq);
-#endif
 		wcd9xxx_swch_irq_handler(mbhc);
 		wcd9xxx_unlock_sleep(mbhc->resmgr->core);
-#ifdef CONFIG_MACH_LGE
-		enable_irq(mbhc->mbhc_cfg->gpio_irq);
-#endif
 	}
 
 	pr_debug("%s: leave %d\n", __func__, r);
@@ -3141,10 +3120,10 @@ static int wcd9xxx_setup_jack_detect_irq(struct wcd9xxx_mbhc *mbhc)
 
 		switch (mbhc->mbhc_version) {
 		case WCD9XXX_MBHC_VERSION_TAIKO:
-			jack_irq = WCD9XXX_IRQ_MBHC_JACK_SWITCH_TAIKO;
+			jack_irq = WCD9320_IRQ_MBHC_JACK_SWITCH;
 			break;
 		case WCD9XXX_MBHC_VERSION_TAPAN:
-			jack_irq = WCD9XXX_IRQ_MBHC_JACK_SWITCH_TAPAN;
+			jack_irq = WCD9306_IRQ_MBHC_JACK_SWITCH;
 			break;
 		default:
 			return -EINVAL;
@@ -3740,11 +3719,10 @@ int wcd9xxx_mbhc_init(struct wcd9xxx_mbhc *mbhc, struct wcd9xxx_resmgr *resmgr,
 
 	core = mbhc->resmgr->core;
 
-#ifdef CONFIG_MACH_LGE
-if( !mbhc_enabled )
-	goto skip;
-#endif
-    ret = wcd9xxx_request_irq(core, WCD9XXX_IRQ_MBHC_INSERTION,
+	if (is_mbhc_disabled())
+		goto skip;
+
+	ret = wcd9xxx_request_irq(core, WCD9XXX_IRQ_MBHC_INSERTION,
 				  wcd9xxx_hs_insert_irq,
 				  "Headset insert detect", mbhc);
 	if (ret) {
@@ -3780,6 +3758,8 @@ if( !mbhc_enabled )
 			WCD9XXX_IRQ_MBHC_RELEASE);
 		goto err_release_irq;
 	}
+
+skip :
 	ret = wcd9xxx_request_irq(core, WCD9XXX_IRQ_HPH_PA_OCPL_FAULT,
 				  wcd9xxx_hphl_ocp_irq, "HPH_L OCP detect",
 				  mbhc);
@@ -3799,9 +3779,7 @@ if( !mbhc_enabled )
 		goto err_hphr_ocp_irq;
 	}
 	wcd9xxx_disable_irq(codec->control_data, WCD9XXX_IRQ_HPH_PA_OCPR_FAULT);
-#ifdef CONFIG_MACH_LGE
-skip :
-#endif
+
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;
 
@@ -3832,7 +3810,18 @@ void wcd9xxx_mbhc_deinit(struct wcd9xxx_mbhc *mbhc)
 	wcd9xxx_free_irq(cdata, WCD9XXX_IRQ_MBHC_REMOVAL, mbhc);
 	wcd9xxx_free_irq(cdata, WCD9XXX_IRQ_MBHC_INSERTION, mbhc);
 
-	wcd9xxx_free_irq(cdata, WCD9XXX_IRQ_MBHC_JACK_SWITCH, mbhc);
+	switch (mbhc->mbhc_version) {
+	case WCD9XXX_MBHC_VERSION_TAIKO:
+		wcd9xxx_free_irq(cdata, WCD9320_IRQ_MBHC_JACK_SWITCH, mbhc);
+		break;
+	case WCD9XXX_MBHC_VERSION_TAPAN:
+		wcd9xxx_free_irq(cdata, WCD9306_IRQ_MBHC_JACK_SWITCH, mbhc);
+		break;
+	default:
+		pr_err("%s: irq free failed! Invalid MBHC version %d\n",
+			__func__, mbhc->mbhc_version);
+	}
+
 	wcd9xxx_free_irq(cdata, WCD9XXX_IRQ_HPH_PA_OCPL_FAULT, mbhc);
 	wcd9xxx_free_irq(cdata, WCD9XXX_IRQ_HPH_PA_OCPR_FAULT, mbhc);
 
